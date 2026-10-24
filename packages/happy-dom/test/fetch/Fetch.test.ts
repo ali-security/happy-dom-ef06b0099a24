@@ -17,6 +17,7 @@ import { ReadableStream } from 'stream/web';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import FetchHTTPSCertificate from '../../src/fetch/certificate/FetchHTTPSCertificate.js';
 import * as PropertySymbol from '../../src/PropertySymbol.js';
+import Browser from '../../src/browser/Browser.js';
 
 const LAST_CHUNK = Buffer.from('0\r\n\r\n');
 
@@ -1276,14 +1277,32 @@ describe('Fetch', () => {
 		});
 
 		it('Forwards "cookie", "authorization" or "www-authenticate" if request credentials are set to "include".', async () => {
-			const originURL = 'https://localhost:8080';
-			const window = new Window({ url: originURL });
-			const url = 'https://other.origin.com/some/path';
-			const cookies = 'key1=value1; key2=value2';
+			const browser = new Browser();
+			const page = browser.newPage();
+			const browserFrame = page.mainFrame;
+			const window = browserFrame.window;
 
-			for (const cookie of cookies.split(';')) {
-				window.document.cookie = cookie.trim();
-			}
+			const originURL = 'https://localhost:8080';
+			const targetURL = 'https://other.origin.com/some/path';
+
+			browserFrame.url = originURL;
+
+			const sameOriginCookie = 'key1=value1';
+			const crossOriginCookie = 'key2=value2';
+
+			window.document.cookie = sameOriginCookie;
+
+			browserFrame.page.context.cookieContainer.addCookies([
+				{
+					key: 'key2',
+					originURL: new URL(targetURL),
+					value: 'value2',
+					domain: 'other.origin.com',
+					path: '/',
+					httpOnly: true,
+					secure: true
+				}
+			]);
 
 			const network = mockNetwork('https', {
 				beforeResponse({ request, response }) {
@@ -1292,7 +1311,7 @@ describe('Fetch', () => {
 				}
 			});
 
-			await window.fetch(url, {
+			await window.fetch(targetURL, {
 				headers: {
 					authorization: 'authorization',
 					'www-authenticate': 'www-authenticate'
@@ -1302,7 +1321,7 @@ describe('Fetch', () => {
 
 			expect(network.requestHistory).toEqual([
 				{
-					url,
+					url: targetURL,
 					options: {
 						agent: false,
 						rejectUnauthorized: true,
@@ -1322,7 +1341,7 @@ describe('Fetch', () => {
 					}
 				},
 				{
-					url,
+					url: targetURL,
 					options: {
 						method: 'GET',
 						headers: {
@@ -1332,7 +1351,7 @@ describe('Fetch', () => {
 							'Accept-Encoding': 'gzip, deflate, br',
 							Origin: originURL,
 							Referer: originURL + '/',
-							Cookie: cookies,
+							Cookie: crossOriginCookie,
 							authorization: 'authorization',
 							'www-authenticate': 'www-authenticate'
 						},
