@@ -52,6 +52,16 @@ const IMPORT_REGEXP = /{([^}]+)}|\*\s+as\s+([a-zA-Z0-9-_$]+)|([a-zA-Z0-9-_$]+)/g
 const VALID_VARIABLE_NAME_REGEXP = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
 
 /**
+ * Valid local binding identifier regexp (supports Unicode identifiers).
+ */
+const VALID_BINDING_NAME_REGEXP = /^[\p{ID_Start}_$][\p{ID_Continue}$\u200c\u200d]*$/u;
+
+/**
+ * Valid string literal import name regexp.
+ */
+const VALID_STRING_NAME_REGEXP = /^(?:"[^"\\\r\n\u2028\u2029]*"|'[^'\\\r\n\u2028\u2029]*')$/;
+
+/**
  * Valid preceding token before a statement.
  */
 const PRECEDING_STATEMENT_TOKEN_REGEXP = /['"`(){}\s;=>]/;
@@ -176,12 +186,44 @@ export default class ECMAScriptModuleCompiler {
 						while ((importMatch = importRegExp.exec(variables))) {
 							if (importMatch[1]) {
 								// Import braces
-								importCode.push(
-									`const {${importMatch[1].replace(
-										/\s+as\s+/gm,
-										': '
-									)}} = $happy_dom.imports.get('${url}')`
-								);
+								const parts = this.removeComments(importMatch[1]).split(',');
+								const properties: Array<{ name: string; alias?: string }> = [];
+								let isValid = true;
+								for (const part of parts) {
+									const trimmedPart = part.trim();
+									if (!trimmedPart) {
+										continue;
+									}
+									const nameParts = trimmedPart.split(/\s+as\s+/);
+									const name = nameParts[0];
+									const alias = nameParts[1] || nameParts[0];
+									if (
+										nameParts.length <= 2 &&
+										VALID_BINDING_NAME_REGEXP.test(alias) &&
+										(VALID_BINDING_NAME_REGEXP.test(name) || VALID_STRING_NAME_REGEXP.test(name))
+									) {
+										const unquotedName = name.replace(/["']/g, '');
+										properties.push(
+											unquotedName === alias
+												? { name: unquotedName }
+												: { name: unquotedName, alias }
+										);
+									} else {
+										isValid = false;
+									}
+								}
+								if (isValid) {
+									importCode.push(
+										`const {${importMatch[1].replace(
+											/\s+as\s+/gm,
+											': '
+										)}} = $happy_dom.imports.get('${url}')`
+									);
+								} else {
+									importCode.push(
+										`const {${properties.map((property) => (property.alias ? `${JSON.stringify(property.name)}: ${property.alias}` : property.name)).join(', ')}} = $happy_dom.imports.get('${url}')`
+									);
+								}
 							} else if (importMatch[2]) {
 								// Import all as
 								importCode.push(`const ${importMatch[2]} = $happy_dom.imports.get('${url}')`);
@@ -576,6 +618,53 @@ export default class ECMAScriptModuleCompiler {
 		}
 
 		newCode += code.substring(lastIndex);
+
+		return newCode;
+	}
+
+	/**
+	 * Remove single line and multiline comments, ignoring comment tokens inside string literals.
+	 *
+	 * Unterminated comments are left in place, so that they fail validation.
+	 *
+	 * @param code Code.
+	 * @returns Code without comments.
+	 */
+	private removeComments(code: string): string {
+		let newCode = '';
+		let index = 0;
+
+		while (index < code.length) {
+			const char = code[index];
+			if (char === '"' || char === "'") {
+				let end = index + 1;
+				while (end < code.length && code[end] !== char) {
+					if (code[end] === '\\') {
+						end++;
+					}
+					end++;
+				}
+				newCode += code.substring(index, end + 1);
+				index = end + 1;
+			} else if (char === '/' && code[index + 1] === '*') {
+				const end = code.indexOf('*/', index + 2);
+				if (end === -1) {
+					return newCode + code.substring(index);
+				}
+				newCode += ' ';
+				index = end + 2;
+			} else if (char === '/' && code[index + 1] === '/') {
+				const lineEnd = code.substring(index + 2).search(/[\n\r\u2028\u2029]/);
+				if (lineEnd === -1) {
+					return newCode + code.substring(index);
+				}
+				newCode += '\n';
+				index = index + 2 + lineEnd + 1;
+			} else {
+				newCode += char;
+				index++;
+			}
+		}
 
 		return newCode;
 	}

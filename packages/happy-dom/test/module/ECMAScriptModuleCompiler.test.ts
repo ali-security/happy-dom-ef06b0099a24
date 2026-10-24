@@ -593,6 +593,31 @@ $happy_dom.exports['valid'] = valid
 			expect(exports).toEqual({ valid: 'valid' });
 		});
 
+		it('Unsanitized import aliases are not interpolated as executable code.', async () => {
+			const code = `
+				import {
+					missing as injected = globalThis.__HAPPY_DOM_PWNED__ = 1337
+				} from './dep.json' with { type: 'json' };
+				import { other = globalThis.__HAPPY_DOM_PWNED__ = 1337 } from './dep.json' with { type: 'json' };
+				import { valid as ünicode$1 } from './dep.json' with { type: 'json' };
+			`;
+
+			const compiler = new ECMAScriptModuleCompiler(window);
+			const result = compiler.compile('http://localhost:8080/js/app/main.js', code);
+
+			expect(result.execute.toString()).not.toContain('__HAPPY_DOM_PWNED__');
+			expect(result.execute.toString()).toContain('const { valid: ünicode$1 }');
+
+			await result.execute({
+				dispatchError: () => {},
+				dynamicImport: () => Promise.resolve({}),
+				imports: new Map([['http://localhost:8080/js/app/dep.json', {}]]),
+				exports: {}
+			});
+
+			expect((<any>globalThis).__HAPPY_DOM_PWNED__).toBeUndefined();
+		});
+
 		it('Handles real world example.', () => {
 			const code = `const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["static/js/preload-helper-BMSd6Up6.js","static/js/Router-yzXgKzu7.js","static/js/_commonjsHelpers-BosuxZz1.js","static/js/Choice-Bixrh5CR.js","static/js/index-OjqIgG3h.js","static/js/arrow-left-DVwQ9ese.js","static/js/Image-CMZuFGwN.js","static/js/IdGenerator-BXAguRov.js","static/js/resizeListener-BpJMTz31.js","static/js/menu-BQ9iRMnL.js","static/js/menu-DGNLEQ8L.js"])))=>i.map(i=>d[i]);
 import{_ as a}from"./preload-helper-BMSd6Up6.js";import{k as g,s as A,r as C,t as P,h as o,R as c,m as O,F as V,u as B,n as M,A as f,P as $,v as G,w as _,q as W}from"./Router-yzXgKzu7.js";import{s as b}from"./sizes-1ww1H62B.js";import{C as F,S as d,r as U,b as I,I as H,s as N,g as j,i as K,d as q,T as E}from"./Choice-Bixrh5CR.js";import{K as R,W as Z}from"./index-OjqIgG3h.js";import"./arrow-left-DVwQ9ese.js";import{I as te}from"./Image-CMZuFGwN.js";const ie=[["&","&amp"],["<","&lt"],[">","&gt"],[\'"\',"&quot"],["\'","&#x27"],["/","&#x2F"]];class ae{static encodeForAttribute(e){for(const t of ie)e=e.replace(new RegExp(t[0],"gm"),t[1]+";");return e}}class ne{static templateToString(e,...t){let i="";for(let n=0,s=e.length;n<s;n++)i+=e[n],n<s-1&&t[n]!==null&&(i.endsWith(\'="\')||i.endsWith("=\'")?i+=ae.encodeForAttribute(String(t[n])):i+=String(t[n]));return i}}const $e=ne.templateToString,D=F.templateToString,oe=D\`
