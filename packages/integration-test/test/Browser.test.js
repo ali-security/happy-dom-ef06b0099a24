@@ -2,8 +2,11 @@ import { Browser, BrowserErrorCaptureEnum } from 'happy-dom';
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
+// Sealed build: these tests load live third-party websites, which serve a bot challenge / abort asset fetches on CI runners.
+const SKIP_LIVE_WEBSITE = 'Sealed build: depends on live third-party websites';
+
 describe('Browser', () => {
-	it('Goes to a "github.com".', async () => {
+	it('Goes to a "github.com".', { skip: SKIP_LIVE_WEBSITE }, async () => {
 		const browser = new Browser({
 			settings: {
 				errorCapture: BrowserErrorCaptureEnum.processLevel,
@@ -44,7 +47,7 @@ describe('Browser', () => {
 		await browser.close();
 	});
 
-	it('Goes to "npmjs.com".', async () => {
+	it('Goes to "npmjs.com".', { skip: SKIP_LIVE_WEBSITE }, async () => {
 		const browser = new Browser({
 			settings: {
 				errorCapture: BrowserErrorCaptureEnum.processLevel

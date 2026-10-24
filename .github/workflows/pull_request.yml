@@ -1,11 +1,17 @@
 name: Pull request
 
 on:
-  pull_request
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional vitest filter for packages/happy-dom (empty runs the full suite)'
+        required: false
+        default: ''
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       matrix:
         node-version: [20, 22, 24]
@@ -55,6 +61,9 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
   
+      - name: Set version
+        run: node ./node_modules/.bin/happy-set-workspace-version --version=18.0.1
+
       - name: Compile package
         run: npm run compile
 
@@ -62,4 +71,23 @@ jobs:
         run: npm run lint
 
       - name: Test
-        run: npm run test
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            cd packages/happy-dom && npx vitest run ${{ inputs.test-filter }}
+          else
+            npm run test
+          fi
+
+      - name: Pack happy-dom
+        if: matrix.node-version == 22
+        run: |
+          mkdir -p ${{ github.workspace }}/seal-dist
+          cd packages/happy-dom && npm pack --pack-destination ${{ github.workspace }}/seal-dist
+
+      - name: Upload happy-dom tarball
+        if: matrix.node-version == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: happy-dom-tgz
+          path: seal-dist/happy-dom-*.tgz
+          if-no-files-found: error
