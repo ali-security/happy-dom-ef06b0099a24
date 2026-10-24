@@ -9,6 +9,7 @@ import VirtualConsole from '../../src/console/VirtualConsole.js';
 import VirtualConsolePrinter from '../../src/console/VirtualConsolePrinter.js';
 import PackageVersion from '../../src/version.js';
 import HTMLIFrameElement from '../../src/nodes/html-iframe-element/HTMLIFrameElement.js';
+import HTMLElement from '../../src/nodes/html-element/HTMLElement.js';
 import DetachedWindowAPI from '../../src/window/DetachedWindowAPI.js';
 import '../types.d.js';
 import BrowserErrorCaptureEnum from '../../src/browser/enums/BrowserErrorCaptureEnum.js';
@@ -149,6 +150,7 @@ describe('Window', () => {
 				console: globalThis.console,
 				settings: {
 					disableJavaScriptEvaluation: true,
+					enableJavaScriptEvaluation: true,
 					navigator: {
 						userAgent: 'test'
 					},
@@ -169,6 +171,7 @@ describe('Window', () => {
 				VirtualConsolePrinter
 			);
 			expect(windowWithOptions.happyDOM?.settings.disableJavaScriptEvaluation).toBe(true);
+			expect(windowWithOptions.happyDOM?.settings.enableJavaScriptEvaluation).toBe(true);
 			expect(windowWithOptions.happyDOM?.settings.disableJavaScriptFileLoading).toBe(false);
 			expect(windowWithOptions.happyDOM?.settings.disableCSSFileLoading).toBe(false);
 			expect(windowWithOptions.happyDOM?.settings.disableIframePageLoading).toBe(false);
@@ -191,6 +194,7 @@ describe('Window', () => {
 				VirtualConsolePrinter
 			);
 			expect(windowWithoutOptions.happyDOM?.settings.disableJavaScriptEvaluation).toBe(false);
+			expect(windowWithoutOptions.happyDOM?.settings.enableJavaScriptEvaluation).toBe(false);
 			expect(windowWithoutOptions.happyDOM?.settings.disableJavaScriptFileLoading).toBe(false);
 			expect(windowWithoutOptions.happyDOM?.settings.disableCSSFileLoading).toBe(false);
 			expect(windowWithoutOptions.happyDOM?.settings.disableIframePageLoading).toBe(false);
@@ -216,6 +220,42 @@ describe('Window', () => {
 			expect(window.innerHeight).toBe(1080);
 			expect(window.outerWidth).toBe(1920);
 			expect(window.outerHeight).toBe(1080);
+		});
+
+		it('Does not evaluate JavaScript by default to prevent untrusted code from escaping the VM context.', async () => {
+			const window = new Window({ url: 'https://localhost:8080/' });
+			const document = window.document;
+			const payload =
+				'globalThis.escaped = globalThis.constructor.constructor("return process")();';
+
+			document.write(`<script>${payload}</script>`);
+			document.write(`<script type="module">${payload}</script>`);
+			document.write(`<div id="target" onclick='${payload}'></div>`);
+			(<HTMLElement>document.getElementById('target')).click();
+
+			await window.happyDOM?.waitUntilComplete();
+
+			expect((<any>window)['escaped']).toBeUndefined();
+		});
+
+		it('Evaluates JavaScript when "enableJavaScriptEvaluation" is set to "true".', async () => {
+			const window = new Window({
+				url: 'https://localhost:8080/',
+				settings: {
+					enableJavaScriptEvaluation: true,
+					suppressCodeGenerationFromStringsWarning: true
+				}
+			});
+			const document = window.document;
+
+			document.write('<script>globalThis.scriptResult = 1 + 1;</script>');
+			document.write('<div id="target" onclick="globalThis.clickResult = 2 + 2;"></div>');
+			(<HTMLElement>document.getElementById('target')).click();
+
+			await window.happyDOM?.waitUntilComplete();
+
+			expect((<any>window)['scriptResult']).toBe(2);
+			expect((<any>window)['clickResult']).toBe(4);
 		});
 	});
 

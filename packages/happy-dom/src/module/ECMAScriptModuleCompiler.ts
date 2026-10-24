@@ -110,7 +110,7 @@ export default class ECMAScriptModuleCompiler {
 		};
 		const templateString: number[] = [];
 		const exportSpreadVariables: Array<Map<string, string>> = [];
-		let newCode = `(async function anonymous($happy_dom) {\n//# sourceURL=${moduleURL}\n`;
+		let newCode = `(async function anonymous($happy_dom) {\n`;
 		let match: RegExpExecArray | null;
 		let precedingToken: string;
 		let isEscaped: boolean;
@@ -518,7 +518,12 @@ export default class ECMAScriptModuleCompiler {
 		newCode += '\n})';
 
 		try {
-			return { imports, execute: this.window.eval(newCode) };
+			return {
+				imports,
+				execute: this.window[PropertySymbol.evaluateScript](newCode, {
+					filename: moduleURL
+				})
+			};
 		} catch (e) {
 			const error = new this.window.SyntaxError(
 				`Failed to parse module '${moduleURL}': ${(<Error>e).message}`
